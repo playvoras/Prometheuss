@@ -1,194 +1,314 @@
--- This Script is Part of the Prometheus Obfuscator by Levno_710
+-- This Script is Part of the ObscuraLua Obfuscator by User319183
 --
--- AntiTamper.lua
+-- PaidAntiTamper.lua
 --
--- This Script provides an Obfuscation Step, that breaks the script, when someone tries to tamper with it.
+-- This script adds PaidAntiTamper code to the script to prevent tampering. When tampering is detected, the script will stop executing.
+local Step = require("ObscuraLua.step");
+local Parser = require("ObscuraLua.parser");
+local Enums = require("ObscuraLua.enums");
+local EncryptStrings = require("ObscuraLua.steps.EncryptStrings");
+local WrapInFunction = require("ObscuraLua.steps.WrapInFunction");
 
-local Step = require("prometheus.step");
-local Ast = require("prometheus.ast");
-local Scope = require("prometheus.scope");
-local RandomStrings = require("prometheus.randomStrings")
-local Parser = require("prometheus.parser");
-local Enums = require("prometheus.enums");
-local logger = require("logger");
+-- Initialize the steps
+local wrapInFunctionStep = WrapInFunction:new()
 
 local AntiTamper = Step:extend();
-AntiTamper.Description = "This Step Breaks your Script when it is modified. This is only effective when using the new VM.";
+AntiTamper.Description =
+"This step adds AntiTamper code to the script to prevent tampering. When tampering is detected, the script will stop executing.";
 AntiTamper.Name = "Anti Tamper";
 
-AntiTamper.SettingsDescriptor = {
-    UseDebug = {
-        type = "boolean",
-        default = true,
-        description = "Use debug library. (Recommended, however scripts will not work without debug library.)"
-    }
-}
-
-function AntiTamper:init(settings)
-	
-end
+function AntiTamper:init(settings) end
 
 function AntiTamper:apply(ast, pipeline)
-    if pipeline.PrettyPrint then
-        logger:warn(string.format("\"%s\" cannot be used with PrettyPrint, ignoring \"%s\"", self.Name, self.Name));
-        return ast;
-    end
-	local code = "do local valid = true;";
-    if self.UseDebug then
-        local string = RandomStrings.randomString();
-        code = code .. [[
-            -- Anti Beautify
-			local sethook = debug and debug.sethook or function() end;
-			local allowedLine = nil;
-			local called = 0;
-			sethook(function(s, line)
-				if not line then
-					return
-				end
-				called = called + 1;
-				if allowedLine then
-					if allowedLine ~= line then
-						sethook(error, "l", 5);
-					end
-				else
-					allowedLine = line;
-				end
-			end, "l", 5);
-			(function() end)();
-			(function() end)();
-			sethook();
-			if called < 2 then
-				valid = false;
-			end
-            if called < 2 then
-                valid = false;
-            end
+    local code = "do local valid = true;";
 
-            -- Anti Function Hook
-            local funcs = {pcall, string.char, debug.getinfo, string.dump}
-            for i = 1, #funcs do
-                if debug.getinfo(funcs[i]).what ~= "C" then
-                    valid = false;
-                end
-
-                if debug.getlocal(funcs[i], 1) then
-                    valid = false;
-                end
-
-                if debug.getupvalue(funcs[i], 1) then
-                    valid = false;
-                end
-
-                if pcall(string.dump, funcs[i]) then
-                    valid = false;
-                end
-            end
-
-            -- Anti Beautify
-            local function getTraceback()
-                local str = (function(arg)
-                    return debug.traceback(arg)
-                end)("]] .. string .. [[");
-                return str;
-            end
-    
-            local traceback = getTraceback();
-            valid = valid and traceback:sub(1, traceback:find("\n") - 1) == "]] .. string .. [[";
-            local iter = traceback:gmatch(":(%d*):");
-            local v, c = iter(), 1;
-            for i in iter do
-                valid = valid and i == v;
-                c = c + 1;
-            end
-            valid = valid and c >= 2;
-        ]]
-    end
     code = code .. [[
-    local gmatch = string.gmatch;
-    local err = function() error("Tamper Detected!") end;
+            -- Initialize multiple error handling functions with different messages and types
+            local err1 = function() originalError({msg = "Tampering detected. Please contact the owner of this script for a new version."}) while true do end end
+            local err2 = function() originalError("Tampering detected. Error code: " .. math.random(1000, 9999)) while true do end end
+            local err3 = function() originalError(function() return "Tampering detected. This incident will be reported." end) while true do end end
+            local errFuncs = {err1, err2, err3}
+            local err = errFuncs[math.random(1, #errFuncs)]
+        ]]
 
-    local pcallIntact2 = false;
-    local pcallIntact = pcall(function()
-        pcallIntact2 = true;
-    end) and pcallIntact2;
+    -- anti over write code ..
+    local antiOverwriteCode = [[
+-- Store the original error function in a local variable
+local originalError = error
+-- Store the original functions in local variables
+local originalPairs = pairs
+local originalSetmetatable = setmetatable
+local originalGetmetatable = getmetatable
+local originalType = type
+local originalLoad = load
+local originalLoadstring = loadstring
+local originalPcall = pcall
+local originalMathRandom = math.random
+local originalXpcall = xpcall
+local originalDebug = debug
+local originalDebugGetinfo = debug.getinfo
+-- Store the original tables in local variables
+local originalPackage = package
+local originalCoroutine = coroutine
+local originalString = string
 
-    local random = math.random;
-    local tblconcat = table.concat;
-    local unpkg = table and table.unpack or unpack;
-    local n = random(3, 65);
-    local acc1 = 0;
-    local acc2 = 0;
-    local pcallRet = {pcall(function() local a = ]] .. tostring(math.random(1, 2^24)) .. [[ - "]] .. RandomStrings.randomString() .. [[" ^ ]] .. tostring(math.random(1, 2^24)) .. [[ return "]] .. RandomStrings.randomString() .. [[" / a; end)};
-    local origMsg = pcallRet[2];
-    local line = tonumber(gmatch(tostring(origMsg), ':(%d*):')());
-    for i = 1, n do
-        local len = math.random(1, 100);
-        local n2 = random(0, 255);
-        local pos = random(1, len);
-        local shouldErr = random(1, 2) == 1;
-        local msg = origMsg:gsub(':(%d*):', ':' .. tostring(random(0, 10000)) .. ':');
-        local arr = {pcall(function()
-            if random(1, 2) == 1 or i == n then
-                local line2 = tonumber(gmatch(tostring(({pcall(function() local a = ]] .. tostring(math.random(1, 2^24)) .. [[ - "]] .. RandomStrings.randomString() .. [[" ^ ]] .. tostring(math.random(1, 2^24)) .. [[ return "]] .. RandomStrings.randomString() .. [[" / a; end)})[2]), ':(%d*):')());
-                valid = valid and line == line2;
+local originalMath = math
+local originalTable = table
+local originalOs = os
+local originalIo = io
+local originalFile = file
+local AntiOverwrite = {}
+local originalGlobals = {}
+for k, v in originalPairs(_G) do
+    originalGlobals[k] = v
+end
+
+local function protect(t)
+    local mt = {
+        __index = t,
+        __newindex = function(t, k, v)
+            if originalGlobals[k] then
+                err()
+            else
+                originalGlobals[k] = v
             end
-            if shouldErr then
-                error(msg, 0);
-            end
-            local arr = {};
-            for i = 1, len do
-                arr[i] = random(0, 255);
-            end
-            arr[pos] = n2;
-            return unpkg(arr);
-        end)};
-        if shouldErr then
-            valid = valid and arr[1] == false and arr[2] == msg;
-        else
-            valid = valid and arr[1];
-            acc1 = (acc1 + arr[pos + 1]) % 256;
-            acc2 = (acc2 + n2) % 256;
+        end,
+        __metatable = false,
+        __gc = function()
+            err()
+        end,
+        __mode = "k",
+        __call = function()
+            err()
+        end,
+        __len = function()
+            err()
+        end,
+        __pairs = function()
+            err()
+        end,
+        __ipairs = function()
+            err()
+        end,
+        __debug = function()
+            err()
+        end,
+        __tostring = function()
+            err()
+        end,
+        __concat = function()
+            err()
+        end,
+        __unm = function()
+            err()
+        end,
+        __add = function()
+            err()
+        end,
+        __sub = function()
+            err()
+        end,
+        __mul = function()
+            err()
+        end,
+        __div = function()
+            err()
+        end,
+        __mod = function()
+            err()
+        end,
+        __pow = function()
+            err()
+        end,
+        __eq = function()
+            err()
+        end,
+        __lt = function()
+            err()
+        end,
+        __le = function()
+            err()
+        end,
+    }
+    return originalSetmetatable({}, mt)
+end
+
+function AntiOverwrite.protectGlobals()
+    for k, v in originalPairs(_G) do
+        if originalType(v) == "function" then
+            originalGlobals[k] = v
         end
     end
-    valid = valid and acc1 == acc2;
+    _G = protect(originalGlobals)
+    originalSetmetatable(_G, {
+        __metatable = "This metatable is locked."
+    })
+end
 
-    if valid then else
-        repeat 
-            return (function()
-                while true do
-                    l1, l2 = l2, l1;
-                    err();
-                end
-            end)(); 
-        until true;
-        while true do
-            l2 = random(1, 6);
-            if l2 > 2 then
-                l2 = tostring(l1);
+function AntiOverwrite.protectTable(t)
+    return protect(t)
+end
+
+function AntiOverwrite.protectFunction(f)
+    local protectedFunction = function(...)
+        return f(...)
+    end
+    return originalSetmetatable({}, {
+        __index = function(t, k)
+            if k == '__call' then
+                return protectedFunction
             else
-                l1 = l2;
+                err()
             end
-        end
-        return;
+        end,
+        __newindex = function(t, k, v)
+            err()
+        end,
+        __metatable = false,
+        __gc = function()
+            err()
+        end,
+        __mode = "k",
+        __call = function()
+            err()
+        end,
+        __len = function()
+            err()
+        end,
+        __pairs = function()
+            err()
+        end,
+        __ipairs = function()
+            err()
+        end,
+        __debug = function()
+            err()
+        end,
+    })
+end
+
+-- Check for hooking attempts
+if error ~= originalError or pairs ~= originalPairs or setmetatable ~= originalSetmetatable or getmetatable ~= originalGetmetatable or type ~= originalType or load ~= originalLoad or loadstring ~= originalLoadstring or pcall ~= originalPcall or xpcall ~= originalXpcall or debug ~= originalDebug or package ~= originalPackage or coroutine ~= originalCoroutine or string ~= originalString or math ~= originalMath or table ~= originalTable then
+    err()
+end
+
+-- Add checks to ensure that the pcall and math.random functions have not been tampered with
+if pcall ~= originalPcall or math.random ~= originalMathRandom then
+    err()
+end
+
+-- List of critical global variables that should not be changed
+local criticalGlobals = {"os", "io", "file", "debug"}
+
+-- Check for environment tampering
+for _, v in ipairs(criticalGlobals) do
+    if _G[v] ~= originalGlobals[v] then
+        err()
     end
 end
 
-    -- Anti Function Arg Hook
-    local obj = setmetatable({}, {
-        __tostring = err,
-    });
-    obj[math.random(1, 100)] = obj;
-    (function() end)(obj);
+-- Check for debug hooks only if not in Roblox's Luau
+local success, result = pcall(originalDebug.gethook)
+if success then
+    if result then
+        err()
+    end
+end
 
-    repeat until valid;
-    ]]
+local gmatch = string.gmatch
+local status, pcallErr = pcall(main)
 
-    local parsed = Parser:new({LuaVersion = Enums.LuaVersion.Lua51}):parse(code);
+-- Check for changes in the metatable of critical global variables
+for _, v in ipairs(criticalGlobals) do
+    if getmetatable(_G[v]) ~= getmetatable(originalGlobals[v]) then
+        err()
+    end
+end
+
+]]
+
+    code = code .. antiOverwriteCode
+
+    local AntiTamperCode = [[
+
+local pcallIntact2 = false;
+local pcallIntact = originalPcall(function()
+    pcallIntact2 = true;
+end) and pcallIntact2;
+
+
+
+local random = math.random
+local tblconcat = table.concat;
+local unpkg = table and table.unpack or unpack;
+n = originalMathRandom(3, 65)
+if n < 3 or n > 65 then
+    local a = random(1, 2^24) - RandomStrings.randomString() ^ random(1, 2^24)
+    return RandomStrings.randomString() / a;
+end
+local acc1 = 0;
+local acc2 = 0;
+local pcallRet = {pcall(function() local a = random(1, 2^24) - RandomStrings.randomString() ^ random(1, 2^24) return RandomStrings.randomString() / a; end)};
+local origMsg = pcallRet[2];
+local line = tonumber(gmatch(tostring(origMsg), ':(%d*):')());
+
+for i = 1, 100 do
+    local len = 100;
+    local n2 = i % 256;
+    local pos = i % len + 1;
+    local shouldErr = i % 2 == 0;
+    local msg = origMsg:gsub(':(%d*):', ':' .. tostring(random(0, 10000)) .. ':');
+    local arr = {pcall(function()
+        if random(1, 2) == 1 or i == n then
+            local line2 = tonumber(gmatch(tostring(({pcall(function() local a = random(1, 2^24) - RandomStrings.randomString() ^ random(1, 2^24) return RandomStrings.randomString() / a; end)})[2]), ':(%d*):')());
+            valid = valid and line == line2;
+        end
+        if shouldErr then
+            error(msg, 0);
+        end
+        local arr = {};
+        for i = 1, len do
+            arr[i] = random(0, 255);
+        end
+        arr[pos] = n2;
+        return unpkg(arr);
+    end)};
+    if shouldErr then
+        valid = valid and arr[1] == false and arr[2] == msg;
+    else
+        valid = valid and arr[1];
+        acc1 = (acc1 + arr[pos + 1]) % 256;
+        acc2 = (acc2 + n2) % 256;
+    end
+end
+
+valid = valid and acc1 == acc2;
+
+if valid then else
+    repeat
+        return (function()
+            -- tamper detected
+            err()
+        end)()
+    until true;
+    return;
+end
+end
+        ]]
+    code = code .. AntiTamperCode;
+
+    local parsed = Parser:new({ LuaVersion = Enums.LuaVersion.Lua51 }):parse(code);
     local doStat = parsed.body.statements[1];
     doStat.body.scope:setParent(ast.body.scope);
-    table.insert(ast.body.statements, 1, doStat);
+    table.insert(ast.body.statements, 2, doStat); -- Insert after the first statement
 
-    return ast;
+    local encryptStringsStep = EncryptStrings:new()
+    ast = encryptStringsStep:apply(ast, pipeline)
+
+    -- Apply the WrapInFunction step
+    ast = wrapInFunctionStep:apply(ast, pipeline)
+
+    return ast
 end
 
 return AntiTamper;
