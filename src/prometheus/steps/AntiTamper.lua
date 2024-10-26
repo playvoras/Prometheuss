@@ -3,11 +3,11 @@
 -- PaidAntiTamper.lua
 --
 -- This script adds PaidAntiTamper code to the script to prevent tampering. When tampering is detected, the script will stop executing.
-local Step = require("ObscuraLua.step");
-local Parser = require("ObscuraLua.parser");
-local Enums = require("ObscuraLua.enums");
-local EncryptStrings = require("ObscuraLua.steps.EncryptStrings");
-local WrapInFunction = require("ObscuraLua.steps.WrapInFunction");
+local Step = require("prometheus.step");
+local Parser = require("prometheus.parser");
+local Enums = require("prometheus.enums");
+local EncryptStrings = require("prometheus.steps.EncryptStrings");
+local WrapInFunction = require("prometheus.steps.WrapInFunction");
 
 -- Initialize the steps
 local wrapInFunctionStep = WrapInFunction:new()
