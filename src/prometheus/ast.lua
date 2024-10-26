@@ -1,6 +1,9 @@
--- This Script is Part of the Prometheus Obfuscator by Levno_710
+-- This Script is Part of the ObscuraLua Obfuscator by User319183
 --
 -- ast.lua
+
+local bit = require("bit");
+local escape = require("prometheus.util").escape;
 
 local Ast = {}
 
@@ -10,6 +13,8 @@ local AstKind = {
 	Block = "Block";
 
 	-- Statements
+	GotoStatement = "GotoStatement";
+	LabelStatement = "LabelStatement";
 	ContinueStatement = "ContinueStatement";
 	BreakStatement = "BreakStatement";
 	DoStatement = "DoStatement";
@@ -34,6 +39,15 @@ local AstKind = {
 	CompoundModStatement = "CompoundModStatement";
 	CompoundPowStatement = "CompoundPowStatement";
 	CompoundConcatStatement = "CompoundConcatStatement";
+	
+	-- LuaU Bitwise Compound Statements BitwiseORExpression, BitwiseANDExpression, BitwiseXORExpression, BitwiseNOTExpression
+	BitwiseLeftShiftExpression = "BitwiseLeftShiftExpression";
+	BitwiseRightShiftExpression = "BitwiseRightShiftExpression";
+	BitwiseORExpression = "BitwiseORExpression";
+	BitwiseANDExpression = "BitwiseANDExpression";
+	BitwiseXORExpression = "BitwiseXORExpression";
+	BitwiseNOTExpression = "BitwiseNOTExpression";
+	
 
 	-- Assignment Index
 	AssignmentIndexing = "AssignmentIndexing";
@@ -43,8 +57,10 @@ local AstKind = {
 	BooleanExpression = "BooleanExpression";
 	NumberExpression = "NumberExpression";
 	StringExpression = "StringExpression";
+	WatermarkExpression = "WatermarkExpression";
 	NilExpression = "NilExpression";
 	VarargExpression = "VarargExpression";
+	-- type literals
 	OrExpression = "OrExpression";
 	AndExpression = "AndExpression";
 	LessThanExpression = "LessThanExpression";
@@ -59,12 +75,15 @@ local AstKind = {
 	MulExpression = "MulExpression";
 	DivExpression = "DivExpression";
 	ModExpression = "ModExpression";
+	SinExpression = "SinExpression";
+	BAndExpression = "BAndExpression";
 	NotExpression = "NotExpression";
 	LenExpression = "LenExpression";
 	NegateExpression = "NegateExpression";
 	PowExpression = "PowExpression";
 	IndexExpression = "IndexExpression";
 	FunctionCallExpression = "FunctionCallExpression";
+	IdentifierExpression = "IdentifierExpression";
 	PassSelfFunctionCallExpression = "PassSelfFunctionCallExpression";
 	VariableExpression = "VariableExpression";
 	FunctionLiteralExpression = "FunctionLiteralExpression";
@@ -82,6 +101,7 @@ local astKindExpressionLookup = {
 	[AstKind.BooleanExpression] = 0;
 	[AstKind.NumberExpression] = 0;
 	[AstKind.StringExpression] = 0;
+	[AstKind.WatermarkExpression] = 0;
 	[AstKind.NilExpression] = 0;
 	[AstKind.VarargExpression] = 0;
 	[AstKind.OrExpression] = 12;
@@ -98,6 +118,9 @@ local astKindExpressionLookup = {
 	[AstKind.MulExpression] = 7;
 	[AstKind.DivExpression] = 7;
 	[AstKind.ModExpression] = 7;
+	[AstKind.SinExpression] = 7;
+	[AstKind.BAndExpression] = 6;
+	
 	[AstKind.NotExpression] = 5;
 	[AstKind.LenExpression] = 5;
 	[AstKind.NegateExpression] = 5;
@@ -105,6 +128,7 @@ local astKindExpressionLookup = {
 	[AstKind.IndexExpression] = 1;
 	[AstKind.AssignmentIndexing] = 1;
 	[AstKind.FunctionCallExpression] = 2;
+	[AstKind.IdentifierExpression] = 0;
 	[AstKind.PassSelfFunctionCallExpression] = 2;
 	[AstKind.VariableExpression] = 0;
 	[AstKind.AssignmentVariable] = 0;
@@ -136,6 +160,14 @@ function Ast.ConstantNode(val)
 	end
 end
 
+function Ast.ConcatExpression(expr1, expr2)
+	return {
+		kind = AstKind.StrCatExpression,
+		lhs = expr1,
+		rhs = expr2,
+		isConstant = false,
+	}
+end
 
 
 function Ast.NopStatement()
@@ -184,6 +216,26 @@ function Ast.Block(statements, scope)
 		kind = AstKind.Block,
 		statements = statements,
 		scope = scope,
+	}
+end
+
+-- Create Goto Statement
+function Ast.GotoStatement(id, scope, label)
+	return {
+		kind = AstKind.GotoStatement,
+		id = id,
+		scope = scope,
+		label = label,
+	}
+end
+
+-- Create Label Statement
+function Ast.LabelStatement(id, scope, label)
+    return {
+		kind = AstKind.LabelStatement,
+		id = id,
+		scope = scope,
+		label = label,
 	}
 end
 
@@ -434,6 +486,32 @@ function Ast.StringExpression(value)
 	}
 end
 
+-- ModifyExpression
+function Ast.ModifyExpression(expr, func)
+	return {
+		kind = AstKind.ModifyExpression,
+		expr = expr,
+		func = func,
+	}
+end
+
+function Ast.WatermarkExpression(value)
+    local shouldEscape = false
+    return {
+        kind = AstKind.WatermarkExpression,
+        isConstant = true,
+        value = escape(value, shouldEscape),
+    }
+end
+
+function Ast.KeyValue(key, value)
+	return {
+		kind = AstKind.KeyedTableEntry,
+		key = key,
+		value = value,
+	}
+end
+
 function Ast.OrExpression(lhs, rhs, simplify)
 	if(simplify and rhs.isConstant and lhs.isConstant) then
 		local success, val = pcall(function() return lhs.value or rhs.value end);
@@ -658,6 +736,37 @@ function Ast.ModExpression(lhs, rhs, simplify)
 	}
 end
 
+function Ast.SinExpression(rhs, simplify)
+	if(simplify and rhs.isConstant) then
+		local success, val = pcall(function() return math.sin(rhs.value) end);
+		if success then
+			return Ast.ConstantNode(val);
+		end
+	end
+
+	return {
+		kind = AstKind.SinExpression,
+		rhs = rhs,
+		isConstant = false,
+	}
+end
+
+function Ast.BAndExpression(lhs, rhs, simplify)
+    if(simplify and rhs.isConstant and lhs.isConstant) then
+        local success, val = pcall(function() return bit.band(lhs.value, rhs.value) end);
+        if success then
+            return Ast.ConstantNode(val);
+        end
+    end
+
+    return {
+        kind = AstKind.BAndExpression,
+        lhs = lhs,
+        rhs = rhs,
+        isConstant = false,
+    }
+end
+
 function Ast.NotExpression(rhs, simplify)
 	if(simplify and rhs.isConstant) then
 		local success, val = pcall(function() return not rhs.value end);
@@ -755,6 +864,13 @@ function Ast.FunctionCallExpression(base, args)
 	}
 end
 
+function Ast.IdentifierExpression(args)
+    return {
+        kind = AstKind.IdentifierExpression,
+        name = args.name,
+    }
+end
+
 function Ast.VariableExpression(scope, id)
 	scope:addReference(id);
 	return {
@@ -784,6 +900,103 @@ function Ast.FunctionLiteralExpression(args, body)
 		kind = AstKind.FunctionLiteralExpression,
 		args = args,
 		body = body,
+	}
+end
+
+
+-- bitwise operations (Left shift, Right shift, Bitwise OR, Bitwise AND, Bitwise XOR)
+function Ast.BitwiseLeftShiftExpression(lhs, rhs, simplify) -- example: a << b
+	if(simplify and rhs.isConstant and lhs.isConstant) then
+		local success, val = pcall(function() return bit.lshift(lhs.value, rhs.value) end);
+		if success then
+			return Ast.ConstantNode(val);
+		end
+	end
+
+	return {
+		kind = AstKind.BitwiseLeftShiftExpression,
+		lhs = lhs,
+		rhs = rhs,
+		isConstant = false,
+	}
+end
+
+function Ast.BitwiseRightShiftExpression(lhs, rhs, simplify) -- example: a >> b
+	if(simplify and rhs.isConstant and lhs.isConstant) then
+		local success, val = pcall(function() return bit.rshift(lhs.value, rhs.value) end);
+		if success then
+			return Ast.ConstantNode(val);
+		end
+	end
+
+	return {
+		kind = AstKind.BitwiseRightShiftExpression,
+		lhs = lhs,
+		rhs = rhs,
+		isConstant = false,
+	}
+end
+
+function Ast.BitwiseORExpression(lhs, rhs, simplify) -- example: a | b
+	if(simplify and rhs.isConstant and lhs.isConstant) then
+		local success, val = pcall(function() return bit.bor(lhs.value, rhs.value) end);
+		if success then
+			return Ast.ConstantNode(val);
+		end
+	end
+
+	return {
+		kind = AstKind.BitwiseORExpression,
+		lhs = lhs,
+		rhs = rhs,
+		isConstant = false,
+	}
+end
+
+function Ast.BitwiseANDExpression(lhs, rhs, simplify) -- example: a & b
+	if(simplify and rhs.isConstant and lhs.isConstant) then
+		local success, val = pcall(function() return bit.band(lhs.value, rhs.value) end);
+		if success then
+			return Ast.ConstantNode(val);
+		end
+	end
+
+	return {
+		kind = AstKind.BitwiseANDExpression,
+		lhs = lhs,
+		rhs = rhs,
+		isConstant = false,
+	}
+end
+
+function Ast.BitwiseXORExpression(lhs, rhs, simplify) -- example: a ~ b
+	if(simplify and rhs.isConstant and lhs.isConstant) then
+		local success, val = pcall(function() return bit.bxor(lhs.value, rhs.value) end);
+		if success then
+			return Ast.ConstantNode(val);
+		end
+	end
+
+	return {
+		kind = AstKind.BitwiseXORExpression,
+		lhs = lhs,
+		rhs = rhs,
+		isConstant = false,
+	}
+end
+
+function Ast.BitwiseNOTExpression(rhs, simplify) -- example: ~a
+	if(simplify and rhs.isConstant) then
+		local success, val = pcall(function() return bit.bnot(rhs.value) end);
+		if success then
+			return Ast.ConstantNode(val);
+		end
+	end
+
+	return {
+		kind = AstKind.BitwiseNOTExpression,
+		rhs = rhs,
+		isConstant = false,
 	}
 end
 
